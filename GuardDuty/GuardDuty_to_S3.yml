@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Stack sends GuardDuty logs from a CloudWatch Event Rule > Lambda > S3 Bucket. Deploy across all regions where Member/Master GuardDuty accounts are setup'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: GuardDuty Bucket Name
+        Parameters:
+          - GDBucketName
+    ParameterLabels:
+      GDBucketName:
+        default: S3 Bucket Destination name for GuardDuty logs 
+Parameters:
+  GDBucketName:
+    Default: guard-duty-logs
+    Type: String  
+  EventRole:
+    Default: GuardDuty-Logs-Role
+    Type: String          
+Resources:
+#-------------------
+# Guard Duty Role
+#-------------------
+  GuardDutyCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "GuardDuty-Logs-Role" 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+  GuardDutyPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: "GuardDuty-Logs-Policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - 
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+          - 
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/GD_to_S3'       
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/GD_to_S3:*'             
+          - 
+            Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - !Sub 'arn:aws:s3:::${GDBucketName}'
+              - !Sub 'arn:aws:s3:::${GDBucketName}/*'               
+      Roles:
+        - !Ref GuardDutyCloudWatchRole        
+#-------------------
+# S3 Delivery Bucket
+#-------------------      
+  GDLogsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref GDBucketName         
+#-------------------
+#CloudWatch Event Rule 
+#-------------------
+  GDLogsEventRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: 'GuardDutyEvents'
+      Description: 'Sends GuardDuty CloudWatch events to Lambda'
+      EventPattern:
+        source:
+          - aws.guardduty
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt GDCloudWatchEventFunction.Arn
+          Id: TargetFunctionV1          
+  GDCloudWatchEventFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'GDLogs-To-S3'
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+
+            const aws = require('aws-sdk');
+            const s3 = new aws.S3();
+ 
+            // Environment variables for S3 Bucket
+            var BucketNAME = process.env.GUARDDUTY_LOGS_BUCKET;
+            var region = process.env.AWS_REGION;
+
+            var userFolder = BucketNAME + "/" + region;
+            function postToS3(message, context) {
+                console.log("Entered postToS3");
+                var key = message.id+".json";
+                console.log("Save the object in S3 bucket with key: " + key);
+                var params = {
+                    Body: JSON.stringify(message),
+                    Bucket: userFolder,
+                    Key: key
+                };
+                s3.putObject(params, function(err, data) {
+                    if (err) console.log(err, err.stack); // error
+                    else console.log(data); // successful
+                });
+            }
+            exports.handler = function(event, context) {
+                console.log("Received event: ", JSON.stringify(event, null, 2));
+                var final_event;
+                console.log(event + " : " + context.awsRequestId);
+                if (event.source === "aws.guardduty") {
+                    final_event = event.detail;
+                } else {
+                    final_event = event;
+                    return;
+                }
+
+                // Send the GuardDuty findings as a json object to S3
+                postToS3(final_event, context);
+            };
+      Description: Sends GuardDuty CloudWatch Events to an S3 Bucket
+      Handler: index.handler
+      Environment:
+        Variables: 
+          GUARDDUTY_LOGS_BUCKET: !Sub ${GDBucketName}
+      MemorySize: 1024
+      Role:  !Join [ '', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/', !Ref 'EventRole' ]]
+      Runtime: nodejs8.10
+      Timeout: 5	
+  LambdaPermissionForCloudTrailCloudWatchEventRules:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - GDCloudWatchEventFunction
+    Properties:
+      FunctionName: !GetAtt GDCloudWatchEventFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com		   
+      SourceArn: !GetAtt GDLogsEventRule.Arn

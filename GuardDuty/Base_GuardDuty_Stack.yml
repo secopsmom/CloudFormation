@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Base Stack for GuardDuty > S3 Bucket. Deploy to us-east-1'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: GuardDuty Bucket Name
+        Parameters:
+          - GDBucketName
+    ParameterLabels:
+      GDBucketName:
+        default: S3 Bucket Destination name for GuardDuty logs 
+Parameters:
+  GDBucketName:
+    Default: guard-duty-logs
+    Type: String  
+  EventRole:
+    Default: GuardDuty-Logs-Role
+    Type: String          
+Resources:
+#-------------------
+# Guard Duty Role
+#-------------------
+  GuardDutyCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "GuardDuty-Logs-Role" 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+  GuardDutyPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: "GuardDuty-Logs-Policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - 
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+          - 
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/GD_to_S3'       
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/GD_to_S3:*'             
+          - 
+            Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - !Sub 'arn:aws:s3:::${GDBucketName}'
+              - !Sub 'arn:aws:s3:::${GDBucketName}/*'               
+      Roles:
+        - !Ref GuardDutyCloudWatchRole        
+#-------------------
+# S3 Delivery Bucket
+#-------------------      
+  GDLogsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref GDBucketName     

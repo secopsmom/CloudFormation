@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: 'Stack sends GuardDuty logs from a CloudWatch Event Rule > Lambda > S3 Bucket. Deploy across all regions where Member/Master GuardDuty accounts are setup'
+Description: 'Sends GuardDuty logs from a CloudWatch Event Rule > Lambda > S3 Bucket. Deploy across all regions where Member/Master GuardDuty accounts are setup'
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:

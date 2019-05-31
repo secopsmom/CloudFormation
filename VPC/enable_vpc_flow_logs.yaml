@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: 'VPC: Enable VPC flow logs to CloudWatch Logs'
+Description: 'Enables VPC flow logs to CloudWatch Logs'
 Metadata:
   'AWS::CloudFormation::Interface':
     ParameterGroups:
@@ -10,15 +10,10 @@ Metadata:
           - TrafficType
 Parameters:
   RetentionInDays:
-    Description: Specifies the number of days you want to retain log events.
+    Description: Select number of days you want to retain log events.
     Type: Number
-    Default: 14
+    Default: 90
     AllowedValues:
-      - 1
-      - 3
-      - 5
-      - 7
-      - 14
       - 30
       - 60
       - 90
@@ -26,11 +21,6 @@ Parameters:
       - 150
       - 180
       - 365
-      - 400
-      - 545
-      - 731
-      - 1827
-      - 3653
   VPC:
     Type: 'AWS::EC2::VPC::Id'
   TrafficType:
@@ -86,13 +76,11 @@ Outputs:
     Value: vpc/vpc-flowlog
   LogGroupName:
     Description: >-
-      The name of the CloudWatch Logs log group where Amazon EC2 publishes your
-      flow logs.
+      Name of the CloudWatch log group to publish your flow logs.
     Value: !Ref LogGroup
   LogGroupARN:
     Description: >-
-      The ARN of the CloudWatch Logs log group where Amazon EC2 publishes your
-      flow logs.
+      ARN of the CloudWatch log group to publish your flow logs.
     Value: !GetAtt 
       - LogGroup
       - Arn
